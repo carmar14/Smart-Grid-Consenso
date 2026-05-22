@@ -3,7 +3,7 @@ clear; clc; close all
 N=3;
 L=5e-3;
 R=0.1;
-Vg=311;
+Vg=120*sqrt(2);
 w0=2*pi*60;
 
 mp=1e-4;
