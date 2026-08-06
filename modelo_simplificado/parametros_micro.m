@@ -117,6 +117,7 @@ mpcobj.OV(2).Max = Imax;
 % ============================================================
 
 setEstimator(mpcobj,'default');
+setoutdist(mpcobj,'integrators');
 
 %% ============================================================
 % SAVE OBJECT
