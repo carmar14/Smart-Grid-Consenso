@@ -33,21 +33,13 @@ C = [0 1 0;
 
 D = 0;
 
-E= [0 0 -1/Lc]';
-
-%%------sistema aumentado para eliminar error en estado estacionario----
-% %Aa= [A 0;
-%     -Cv 0];
-% Ba = [B;0];
-
-
 %% Sampling Time
 
 Ts = 50e-6;
 
 %% Continuous system
 
-plant_c = ss(A,[B E],C,D);
+plant_c = ss(A,B,C,D);
 
 %% Discrete model
 
@@ -56,12 +48,9 @@ plant = c2d(plant_c,Ts);
 % MPC OBJECT
 % ============================================================
 
-plant.InputGroup.MV = 1;
-plant.InputGroup.MD = 2;
+PredictionHorizon = 20;
 
-PredictionHorizon = 20; %Np
-
-ControlHorizon = 5;   %Nu
+ControlHorizon = 5;
 
 mpcobj = mpc(plant,Ts,...
              PredictionHorizon,...
@@ -71,7 +60,7 @@ mpcobj = mpc(plant,Ts,...
 % WEIGHTS
 % ============================================================
 
-mpcobj.Weights.OutputVariables = [10 1];
+mpcobj.Weights.OutputVariables = 10;
 
 mpcobj.Weights.ManipulatedVariables = 0;
 
@@ -80,10 +69,10 @@ mpcobj.Weights.ManipulatedVariablesRate = 0.1;
 %% ============================================================
 % INPUT CONSTRAINTS
 % ============================================================
-Vdc = 400;
-mpcobj.MV.Min = -Vdc/2;
 
-mpcobj.MV.Max = Vdc/2;
+mpcobj.MV.Min = -400;
+
+mpcobj.MV.Max = 400;
 
 mpcobj.MV.RateMin = -100;
 
@@ -92,25 +81,19 @@ mpcobj.MV.RateMax = 100;
 %% ============================================================
 % OUTPUT CONSTRAINTS (optional)
 % ============================================================
-Vp = sqrt(2)*120;
-% voltage limitation
-mpcobj.OV(1).Min = -Vp;
-mpcobj.OV(1).Max = Vp;
 
-% current limitation
-Imax = 20;
-mpcobj.OV(2).Min = -Imax;
-mpcobj.OV(2).Max = Imax;
+% mpcobj.OV.Min = -311;
+% mpcobj.OV.Max = 311;
 
 %% ============================================================
 % NOMINAL CONDITIONS
 % ============================================================
 
-% mpcobj.Model.Nominal.U = 0;
-% 
-% mpcobj.Model.Nominal.Y = 0;
-% 
-% mpcobj.Model.Nominal.X = zeros(size(plant.A,1),1);
+mpcobj.Model.Nominal.U = 0;
+
+mpcobj.Model.Nominal.Y = 0;
+
+mpcobj.Model.Nominal.X = zeros(size(plant.A,1),1);
 
 %% ============================================================
 % ESTIMATOR
