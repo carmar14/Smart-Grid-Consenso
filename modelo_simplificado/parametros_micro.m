@@ -40,7 +40,6 @@ E= [0 0 -1/Lc]';
 %     -Cv 0];
 % Ba = [B;0];
 
-
 %% Sampling Time
 
 Ts = 50e-6;
