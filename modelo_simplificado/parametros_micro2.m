@@ -2,174 +2,258 @@ clc
 clear
 close all
 
-%----parametros del sistema---
+%% ============================================================
+% PARAMETROS DEL SISTEMA
+% ============================================================
+
 Lf = 1e-3;
-Lc = .5e-3;
+Lc = 0.5e-3;
 Cf = 5e-6;
 
-%-----carga----
+% Carga RL
 R = 1;
 L = 5e-3;
 
-%-----MPC-----
-%xp=Ax+Bu+Ed
-%y =Cx+Du
-%-----|iLf|
-%---x=|Vcf|
-%-----|ILc|
+% Tiempo de muestreo
+Ts = 50e-6;
 
-%---u= Vinv
+% Bus DC
+Vdc = 400;
 
-%--d=vout----perturbacion
+%% ============================================================
+% PARAMETROS DEL MPC
+% ============================================================
 
+PredictionHorizon = 20;
+ControlHorizon = 5;
+
+%% ============================================================
+% MODELO LOCAL DE CADA INVERSOR
+% ============================================================
 
 A = [0 -1/Lf 0;
      1/Cf 0 -1/Cf;
      0 1/Lc 0];
 
-B = [1/Lf 0 0]';
-%---y --_regular corriente hacia la carga y voltaje del capacitor
-%C = [0 1 0;
-     %0 0 1];
+B = [1/Lf;
+     0;
+     0];
 
-%D = zeros(2,2);
-
-E= [0 0 -1/Lc]';
-
-%%------sistema aumentado para eliminar error en estado estacionario----
-% %Aa= [A 0;
-%     -Cv 0];
-% Ba = [B;0];
+E = [0;
+     0;
+     -1/Lc];
 
 %% ============================================================
-% RELACION DEL VOLTAJE DEL PCC
-% ============================================================
+% ECUACION DEL PCC
+%
 % vPCC =
-% K*[alpha*Vc1 + R*Ic1]
+%
+% R*(Ic1+Ic2+Ic3)
 % +
-% K*[alpha*(Vc2+Vc3) + R*(Ic2+Ic3)]
+% (L/Lc)*(Vc1+Vc2+Vc3)
+%
+% ---------------------------------
+%
+% 1 + 3*(L/Lc)
 % ============================================================
+
 alpha = L/Lc;
 
 Kpcc = 1/(1 + 3*alpha);
 
 %% ============================================================
-% SALIDA LOCAL DEL MPC
-%
-% vPCC = Kpcc*(alpha*Vc1 + R*Ic1) + d1
-%%% ============================================================
 % PARTE LOCAL DEL PCC
+% ============================================================
+
+C_local = Kpcc*[0 alpha R];
+
+%% ============================================================
+% MODELO LOCAL REFORMULADO
 %
-% vPCC = C_local*x1 + d1
-% ============================================================
-% Por tanto:
+% dx/dt =
 %
-% C1 = Kpcc*[0 alpha R]
-% D1 = [0 1]
+% (A + E*C_local)x
+% + B*u
+% + E*d
 %
-% Entrada 1 = Vinv1      -> MV
-% Entrada 2 = d1         -> MD
+% vPCC = C_local*x + d
 % ============================================================
 
-C = Kpcc*[0 alpha R];
+A_local = A + E*C_local;
 
-D = [0 1];
+B_local = B;
 
-%% Sampling Time
+E_local = E;
 
-Ts = 50e-6;
-
-%% Continuous system
-
-%plant_c = ss(A,[B E],C,D);
-
-plant_c = ss([A+E*C],[B E],C,D);
-
-%% Discrete model
-
-plant = c2d(plant_c,Ts);
-%% ============================================================
-% MPC OBJECT
-% ============================================================
-
-plant.InputGroup.MV = 1;
-plant.InputGroup.MD = 2;
-
-PredictionHorizon = 20; %Np
-
-ControlHorizon = 5;   %Nu
-
-mpcobj = mpc(plant,Ts,...
-             PredictionHorizon,...
-             ControlHorizon);
+D_local = [0 1];
 
 %% ============================================================
-% WEIGHTS
+% CREAR MPC 1
 % ============================================================
 
-mpcobj.Weights.OutputVariables = [10];
+plant_c1 = ss(...
+    A_local,...
+    [B_local E_local],...
+    C_local,...
+    D_local);
 
-mpcobj.Weights.ManipulatedVariables = 1;
+plant1 = c2d(plant_c1,Ts);
 
-mpcobj.Weights.ManipulatedVariablesRate = 0.1;
+plant1 = setmpcsignals(...
+    plant1,...
+    'MV',1,...
+    'MD',2);
+
+mpc1 = mpc(...
+    plant1,...
+    Ts,...
+    PredictionHorizon,...
+    ControlHorizon);
 
 %% ============================================================
-% INPUT CONSTRAINTS
+% CREAR MPC 2
 % ============================================================
-Vdc = 400;
-mpcobj.MV.Min = -Vdc/2;
 
-mpcobj.MV.Max = Vdc/2;
+plant_c2 = ss(...
+    A_local,...
+    [B_local E_local],...
+    C_local,...
+    D_local);
 
-mpcobj.MV.RateMin = -100;
+plant2 = c2d(plant_c2,Ts);
 
-mpcobj.MV.RateMax = 100;
+plant2 = setmpcsignals(...
+    plant2,...
+    'MV',1,...
+    'MD',2);
+
+mpc2 = mpc(...
+    plant2,...
+    Ts,...
+    PredictionHorizon,...
+    ControlHorizon);
 
 %% ============================================================
-% OUTPUT CONSTRAINTS (optional)
+% CREAR MPC 3
 % ============================================================
-Vp = sqrt(2)*120;
-% voltage limitation
-%mpcobj.OV(1).Min = -Vp;
-%mpcobj.OV(1).Max = Vp;
-mpcobj.OV.Min = -Vp;
-mpcobj.OV.Max = Vp;
 
-% current limitation
-% Imax = 20;
-% mpcobj.OV(2).Min = -Imax;
-% mpcobj.OV(2).Max = Imax;
+plant_c3 = ss(...
+    A_local,...
+    [B_local E_local],...
+    C_local,...
+    D_local);
+
+plant3 = c2d(plant_c3,Ts);
+
+plant3 = setmpcsignals(...
+    plant3,...
+    'MV',1,...
+    'MD',2);
+
+mpc3 = mpc(...
+    plant3,...
+    Ts,...
+    PredictionHorizon,...
+    ControlHorizon);
 
 %% ============================================================
-% NOMINAL CONDITIONS
+% CONFIGURACION DE LOS TRES MPC
 % ============================================================
 
-% mpcobj.Model.Nominal.U = 0;
-% 
-% mpcobj.Model.Nominal.Y = 0;
-% 
-% mpcobj.Model.Nominal.X = zeros(size(plant.A,1),1);
+% ------------------------------------------------------------
+% PESOS
+% ------------------------------------------------------------
+
+mpc1.Weights.OutputVariables = 10;
+mpc2.Weights.OutputVariables = 10;
+mpc3.Weights.OutputVariables = 10;
+
+mpc1.Weights.ManipulatedVariables = 1;
+mpc2.Weights.ManipulatedVariables = 1;
+mpc3.Weights.ManipulatedVariables = 1;
+
+mpc1.Weights.ManipulatedVariablesRate = 0.1;
+mpc2.Weights.ManipulatedVariablesRate = 0.1;
+mpc3.Weights.ManipulatedVariablesRate = 0.1;
+
+% ------------------------------------------------------------
+% RESTRICCIONES MV
+% ------------------------------------------------------------
+mpc1.MV.Min = -Vdc/2;
+mpc1.MV.Max =  Vdc/2;
+mpc1.MV.RateMin = -100;
+mpc1.MV.RateMax =  100;
+
+mpc2.MV.Min = -Vdc/2;
+mpc2.MV.Max =  Vdc/2;
+mpc2.MV.RateMin = -100;
+mpc2.MV.RateMax =  100;
+
+mpc3.MV.Min = -Vdc/2;
+mpc3.MV.Max =  Vdc/2;
+mpc3.MV.RateMin = -100;
+mpc3.MV.RateMax =  100;
+
+
+% ------------------------------------------------------------
+% RESTRICCIONES PCC
+% ------------------------------------------------------------
+
+Vpcc_peak = sqrt(2)*120;
+
+mpc1.OV.Min = -Vpcc_peak;
+mpc1.OV.Max =  Vpcc_peak;
+
+mpc2.OV.Min = -Vpcc_peak;
+mpc2.OV.Max =  Vpcc_peak;
+
+mpc3.OV.Min = -Vpcc_peak;
+mpc3.OV.Max =  Vpcc_peak;
 
 %% ============================================================
-% ESTIMATOR
+% ESTIMADORES
 % ============================================================
 
-setEstimator(mpcobj,'default');
-setoutdist(mpcobj,'integrators');
+setEstimator(mpc1,'default');
+setEstimator(mpc2,'default');
+setEstimator(mpc3,'default');
 
 %% ============================================================
-% SAVE OBJECT
+% MODELOS DE PERTURBACION
 % ============================================================
 
-save MPC_Local_Controller mpcobj
-
-disp('MPC created successfully')
+setoutdist(mpc1,'integrators');
+setoutdist(mpc2,'integrators');
+setoutdist(mpc3,'integrators');
 
 %% ============================================================
-% CLOSED LOOP SIMULATION
+% REVISAR MPC
 % ============================================================
 
-Tsim = 0.5;
+disp('============================================================')
+disp('REVISION MPC1')
+disp('============================================================')
+
+%review(mpc1)
+
+disp('============================================================')
+disp('REVISION MPC2')
+disp('============================================================')
+
+%review(mpc2)
+
+disp('============================================================')
+disp('REVISION MPC3')
+disp('============================================================')
+
+%review(mpc3)
+
+%% ============================================================
+% SIMULACION
+% ============================================================
+
+Tsim = 0.2;
+
 N = round(Tsim/Ts);
 
 t = (0:N-1)'*Ts;
@@ -199,9 +283,7 @@ x3 = zeros(3,1);
 %% ============================================================
 % ESTADOS INTERNOS DE LOS MPC
 % ============================================================
-mpc1 = mpcobj;
-mpc2 = mpcobj;
-mpc3 = mpcobj;
+
 state1 = mpcstate(mpc1);
 state2 = mpcstate(mpc2);
 state3 = mpcstate(mpc3);
@@ -322,17 +404,17 @@ for k = 1:N
     % dx/dt = A*x + B*u + E*vPCC
     % ========================================================
 
-    x1_next = plant.A*x1 + ...
-              plant.B(:,1)*u1 + ...
-              plant.B(:,2)*vPCC;
+    x1_next = plant1.A*x1 + ...
+              plant1.B(:,1)*u1 + ...
+              plant1.B(:,2)*vPCC;
 
-    x2_next = plant.A*x2 + ...
-              plant.B(:,1)*u2 + ...
-              plant.B(:,2)*vPCC;
- 
-    x3_next = plant.A*x3 + ...
-              plant.B(:,1)*u3 + ...
-              plant.B(:,2)*vPCC;
+    x2_next = plant2.A*x2 + ...
+              plant2.B(:,1)*u2 + ...
+              plant2.B(:,2)*vPCC;
+
+    x3_next = plant3.A*x3 + ...
+              plant3.B(:,1)*u3 + ...
+              plant3.B(:,2)*vPCC;
 
     %% ========================================================
     % 9. GUARDAR DATOS
