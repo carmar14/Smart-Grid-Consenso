@@ -7,7 +7,6 @@ Lf = 1e-3;
 Lc = .5e-3;
 Cf = 5e-6;
 
-%-----carga----
 R = 1;
 L = 5e-3;
 
@@ -131,53 +130,44 @@ disp('MPC created successfully')
 % CLOSED LOOP SIMULATION
 % ============================================================
 
-Tsim = 0.5;
+Tsim = 0.5;                 % simulation time [s]
 N = round(Tsim/Ts);
 
+% Time vector
 t = (0:N-1)'*Ts;
 
-%% ------------------------------------------------------------
-% Plant matrices
-% ------------------------------------------------------------
+%% References
 
-Ad = plant.A;
-Bu = plant.B(:,1);
-Bd = plant.B(:,2);
-Cd = plant.C;
-Dd = plant.D;
-
-%% ------------------------------------------------------------
-% References
-% ------------------------------------------------------------
+% Reference for:
+% y(1) = Vcf
+% y(2) = ILc
 
 Vref = 120;
-Iref = 4;
+Iref = 0;
 
 r = repmat([Vref Iref],N,1);
 
-%% ------------------------------------------------------------
-% Disturbance
-% ------------------------------------------------------------
+%% Disturbance
 
-d = zeros(N,1);
+% d = vout
+%
+% Example: constant load/output voltage disturbance
 
-% Constant disturbance applied at t = 0.1 s
-d(t >= 0.1) = 50;
+Vout = zeros(N,1);
 
-%% ------------------------------------------------------------
-% Initial conditions
-% ------------------------------------------------------------
+% Apply a disturbance after 0.1 s
+Vout(t >= 0.1) = 50;
 
-x = zeros(size(Ad,1),1);
+%% Initial condition
 
-% MPC internal state / estimator
-mpcstate_obj = mpcstate(mpcobj);
+x = zeros(size(A,1),1);
 
-%% ------------------------------------------------------------
-% Data storage
-% ------------------------------------------------------------
+% Initial MPC state
+xc = mpcstate(mpcobj);
 
-x_hist = zeros(size(Ad,1),N);
+%% Storage variables
+
+x_hist = zeros(length(x),N);
 y_hist = zeros(2,N);
 u_hist = zeros(1,N);
 
@@ -187,43 +177,30 @@ u_hist = zeros(1,N);
 
 for k = 1:N
 
-    % ---------------------------------------------------------
-    % Plant measurement
-    % ---------------------------------------------------------
+    % Current disturbance
+    d = Vout(k);
 
-    y = Cd*x;
+    % Plant output
+    y = C*x;
 
-    % ---------------------------------------------------------
-    % MPC
-    % ---------------------------------------------------------
+    % MPC control action
+    %
+    % r(k,:) = reference
+    % y      = measured plant output
+    % d      = measured disturbance
 
-    u = mpcmove(mpcobj,mpcstate_obj, y, r(k,:), d(k));
+    u = mpcmove(xc,y,r(k,:),d);
 
-    % ---------------------------------------------------------
-    % Saturation
-    % ---------------------------------------------------------
+    % Plant update
+    %
+    % x(k+1) = A*x(k) + B*u(k) + E*d(k)
 
-    u = min(max(u,mpcobj.MV.Min),mpcobj.MV.Max);
+    x = plant.A*x + plant.B*u + plant.InputGroup.MD.*d;
 
-    % ---------------------------------------------------------
-    % Plant
-    % ---------------------------------------------------------
-
-    x_next = Ad*x + Bu*u + Bd*d(k);
-
-    % ---------------------------------------------------------
-    % Save data
-    % ---------------------------------------------------------
-
+    % Store data
     x_hist(:,k) = x;
     y_hist(:,k) = y;
     u_hist(:,k) = u;
-
-    % ---------------------------------------------------------
-    % Update state
-    % ---------------------------------------------------------
-
-    x = x_next;
 
 end
 
@@ -233,6 +210,8 @@ end
 
 figure
 
+subplot(3,1,1)
+
 plot(t,y_hist(1,:),'LineWidth',1.5)
 hold on
 plot(t,r(:,1),'--','LineWidth',1.2)
@@ -240,10 +219,10 @@ plot(t,r(:,1),'--','LineWidth',1.2)
 grid on
 xlabel('Time [s]')
 ylabel('V_{cf} [V]')
-legend('V_{cf}','V_{ref}')
-title('MPC Closed Loop: Voltage')
+legend('Output','Reference')
+title('Voltage response')
 
-figure
+subplot(3,1,2)
 
 plot(t,y_hist(2,:),'LineWidth',1.5)
 hold on
@@ -252,23 +231,14 @@ plot(t,r(:,2),'--','LineWidth',1.2)
 grid on
 xlabel('Time [s]')
 ylabel('I_{Lc} [A]')
-legend('I_{Lc}','I_{ref}')
-title('MPC Closed Loop: Current')
+legend('Output','Reference')
+title('Current response')
 
-figure
+subplot(3,1,3)
 
 plot(t,u_hist,'LineWidth',1.5)
 
 grid on
 xlabel('Time [s]')
 ylabel('V_{inv} [V]')
-title('MPC Control Action')
-
-figure
-
-plot(t,d,'LineWidth',1.5)
-
-grid on
-xlabel('Time [s]')
-ylabel('V_{out} [V]')
-title('Applied Disturbance')
+title('MPC control action')
