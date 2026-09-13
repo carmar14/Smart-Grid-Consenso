@@ -169,7 +169,7 @@ disp('MPC created successfully')
 % CLOSED LOOP SIMULATION
 % ============================================================
 
-Tsim = 0.5;
+Tsim = 0.2;
 N = round(Tsim/Ts);
 
 t = (0:N-1)'*Ts;
@@ -189,7 +189,7 @@ r = Vpcc_peak*sin(2*pi*f*t);
 %
 % x1 = [if1 Vc1 Ic1]'
 % x2 = [if2 Vc2 Ic2]'
-% x3 = [if3 Vc3]'
+% x3 = [if3 Vc3 Ic3]'
 % ============================================================
 
 x1 = zeros(3,1);
@@ -324,15 +324,15 @@ for k = 1:N
 
     x1_next = plant.A*x1 + ...
               plant.B(:,1)*u1 + ...
-              plant.B(:,2)*vPCC;
+              plant.B(:,2)*d1;%vPCC;
 
     x2_next = plant.A*x2 + ...
               plant.B(:,1)*u2 + ...
-              plant.B(:,2)*vPCC;
+              plant.B(:,2)*d2;%vPCC;
  
     x3_next = plant.A*x3 + ...
               plant.B(:,1)*u3 + ...
-              plant.B(:,2)*vPCC;
+              plant.B(:,2)*d3;%vPCC;
 
     %% ========================================================
     % 9. GUARDAR DATOS
