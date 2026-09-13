@@ -1,0 +1,329 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{siunitx}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\geometry{margin=2.5cm}
+\title{Modelo y estrategia de control de tres VSI en paralelo\\con MPC local y control secundario distribuido por consenso}
+\author{}
+\date{}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,columns=fullflexible,showstringspaces=false}
+\begin{document}
+\maketitle
+
+\section{Arquitectura general}
+La microred está formada por tres inversores fuente de tensión (VSI) conectados en paralelo mediante filtros LCL a un punto común de acoplamiento (PCC). Cada inversor dispone de un controlador MPC local y el control secundario se incorpora mediante un algoritmo distribuido basado en consenso. Esta estructura coincide con la arquitectura planteada en el documento base, donde las variaciones de la carga y de los demás inversores se consideran perturbaciones externas desde el punto de vista del controlador local \cite{tesis}.
+
+\section{Modelo eléctrico local}
+Para cada inversor:
+\begin{equation}
+x_i=\begin{bmatrix}i_{f_i}&v_{C_i}&i_{c_i}\end{bmatrix}^{T},\qquad i=1,2,3.
+\end{equation}
+El modelo continuo es
+\begin{equation}
+\dot{x}_i=Ax_i+Bu_i+Ev_{PCC},
+\end{equation}
+con
+\begin{equation}
+A=\begin{bmatrix}0&-\frac{1}{L_f}&0\\\frac{1}{C_f}&0&-\frac{1}{C_f}\\0&\frac{1}{L_c}&0\end{bmatrix},\quad
+B=\begin{bmatrix}\frac{1}{L_f}\\0\\0\end{bmatrix},\quad
+E=\begin{bmatrix}0\\0\\-\frac{1}{L_c}\end{bmatrix}.
+\end{equation}
+Los parámetros empleados son
+\begin{center}
+\begin{tabular}{lc}\toprule
+$L_f$&$1\,\mathrm{mH}$\\
+$L_c$&$0.5\,\mathrm{mH}$\\
+$C_f$&$5\,\mu\mathrm{F}$\\
+$R$&$1\,\Omega$\\
+$L$&$5\,\mathrm{mH}$\\
+$V_{dc}$&$400\,\mathrm{V}$\\
+$T_s$&$50\,\mu\mathrm{s}$\\
+$f$&$60\,\mathrm{Hz}$\\
+\bottomrule\end{tabular}
+\end{center}
+
+\section{Modelo del PCC y perturbaciones locales}
+El voltaje del PCC es
+\begin{equation}
+v_{PCC}=\frac{R(i_{c1}+i_{c2}+i_{c3})+\frac{L}{L_c}(v_{C1}+v_{C2}+v_{C3})}{1+3\frac{L}{L_c}}.
+\end{equation}
+Esta expresión demuestra que el acoplamiento ocurre mediante $v_{C_i}$ e $i_{c_i}$ \cite{tesis}. Definiendo
+\begin{equation}
+\alpha=\frac{L}{L_c},\qquad K_{PCC}=\frac{1}{1+3\alpha},
+\end{equation}
+y
+\begin{equation}
+C_{PCC}=K_{PCC}\begin{bmatrix}0&\alpha&R\end{bmatrix},
+\end{equation}
+el modelo local utilizado por cada MPC es
+\begin{equation}
+\dot{x}_i=(A+EC_{PCC})x_i+Bu_i+Ed_i,
+\end{equation}
+\begin{equation}
+v_{PCC}=C_{PCC}x_i+d_i.
+\end{equation}
+Las perturbaciones son
+\begin{align}
+d_1&=K_{PCC}[\alpha(v_{C2}+v_{C3})+R(i_{c2}+i_{c3})],\\
+d_2&=K_{PCC}[\alpha(v_{C1}+v_{C3})+R(i_{c1}+i_{c3})],\\
+d_3&=K_{PCC}[\alpha(v_{C1}+v_{C2})+R(i_{c1}+i_{c2})].
+\end{align}
+
+\section{Discretización y MPC}
+Con $T_s=50\,\mu s$:
+\begin{equation}
+x_i[k+1]=A_dx_i[k]+B_du_i[k]+E_dd_i[k],
+\end{equation}
+\begin{equation}
+y_i[k]=C_dx_i[k]+D_du_i[k].
+\end{equation}
+El MPC utiliza
+\begin{equation}
+N_p=20,\qquad N_u=5.
+\end{equation}
+La variable manipulada es
+\begin{equation}
+u_i=v_{inv,i}^{*},
+\end{equation}
+con
+\begin{equation}
+-200\,\mathrm{V}\leq u_i\leq200\,\mathrm{V}.
+\end{equation}
+Para una referencia de $120\,V_{rms}$:
+\begin{equation}
+V_{pico}=\sqrt{2}(120)\approx169.7\,V.
+\end{equation}
+El documento base establece la discretización a $50\,\mu s$ y la estructura de horizonte móvil del MPC \cite{tesis}.
+
+\section{PWM y VSI}
+La salida del MPC es una tensión promedio:
+\begin{equation}
+MPC_i\rightarrow u_i=v_{inv,i}^{*}\rightarrow PWM\rightarrow VSI_i.
+\end{equation}
+Para modulación bipolar de dos niveles:
+\begin{equation}
+m_i=\frac{2u_i}{V_{dc}},\qquad -1\leq m_i\leq1,
+\end{equation}
+\begin{equation}
+D_i=\frac{1+m_i}{2}=\frac{1}{2}+\frac{u_i}{V_{dc}}.
+\end{equation}
+
+\section{Control secundario distribuido por consenso}
+El objetivo nominal es
+\begin{equation}
+V^{*}=120\,V_{rms}.
+\end{equation}
+Cada inversor posee una corrección secundaria $\delta_i$:
+\begin{equation}
+\boxed{V_i^{ref}=V^{*}+\delta_i}.
+\end{equation}
+La referencia instantánea para cada MPC es
+\begin{equation}
+\boxed{r_i(t)=\sqrt{2}V_i^{ref}\sin(2\pi60t)}.
+\end{equation}
+
+\subsection{Medición local}
+A partir del segundo estado:
+\begin{equation}
+v_{C_i}=x_i(2),
+\end{equation}
+se calcula
+\begin{equation}
+\boxed{V_{i,local}=\mathrm{RMS}(v_{C_i})}.
+\end{equation}
+Para $60\,Hz$, una ventana de aproximadamente un ciclo es
+\begin{equation}
+T_{RMS}=\frac{1}{60}=16.667\,ms.
+\end{equation}
+El error local es
+\begin{equation}
+e_i=V^{*}-V_{i,local}.
+\end{equation}
+
+\section{Topología de comunicación}
+Para hacer visible el carácter distribuido se emplea inicialmente:
+\begin{equation}
+VSI_1\longleftrightarrow VSI_2\longleftrightarrow VSI_3.
+\end{equation}
+La matriz de adyacencia es
+\begin{equation}
+\boxed{
+A_g=\begin{bmatrix}0&1&0\\1&0&1\\0&1&0\end{bmatrix}}.
+\end{equation}
+La matriz de grados es
+\begin{equation}
+D_g=\begin{bmatrix}1&0&0\\0&2&0\\0&0&1\end{bmatrix},
+\end{equation}
+y la Laplaciana:
+\begin{equation}
+\boxed{
+L=D_g-A_g=
+\begin{bmatrix}1&-1&0\\-1&2&-1\\0&-1&1\end{bmatrix}}.
+\end{equation}
+
+\section{Ley de consenso}
+Definiendo
+\begin{equation}
+\delta=\begin{bmatrix}\delta_1&\delta_2&\delta_3\end{bmatrix}^{T},\qquad
+e=\begin{bmatrix}e_1&e_2&e_3\end{bmatrix}^{T},
+\end{equation}
+la ley implementada es
+\begin{equation}
+\boxed{\dot{\delta}=k_Ie-k_cL\delta}.
+\end{equation}
+Para la topología en cadena:
+\begin{align}
+\dot{\delta}_1&=k_Ie_1+k_c(\delta_2-\delta_1),\\
+\dot{\delta}_2&=k_Ie_2+k_c[(\delta_1-\delta_2)+(\delta_3-\delta_2)],\\
+\dot{\delta}_3&=k_Ie_3+k_c(\delta_2-\delta_3).
+\end{align}
+Con Euler:
+\begin{equation}
+\boxed{\delta[k+1]=\delta[k]+T_s(k_Ie[k]-k_cL\delta[k])}.
+\end{equation}
+Se emplean inicialmente
+\begin{equation}
+k_I=5,\qquad k_c=10,
+\end{equation}
+y
+\begin{equation}
+-10\,V\leq\delta_i\leq10\,V.
+\end{equation}
+Las condiciones iniciales son
+\begin{equation}
+\delta_1(0)=\delta_2(0)=\delta_3(0)=0.
+\end{equation}
+
+\section{Interpretación de $\delta_i$}
+El consenso busca
+\begin{equation}
+\delta_1\rightarrow\delta^{*},\qquad
+\delta_2\rightarrow\delta^{*},\qquad
+\delta_3\rightarrow\delta^{*}.
+\end{equation}
+No es necesario que $\delta^{*}=0$. En condiciones nominales, si las mediciones locales son $120\,V_{rms}$ y las correcciones parten de cero, entonces $\delta_i=0$ y $V_i^{ref}=120\,V_{rms}$. Ante una perturbación, $\delta_i$ puede apartarse de cero y luego converger entre sí.
+
+\section{Generación de la senoide en Simulink}
+Se utilizan bloques estándar: \texttt{Sine Wave}, \texttt{Gain} con ganancia $\sqrt{2}$ y \texttt{Product}. El bloque Sine Wave genera
+\begin{equation}
+s(t)=\sin(2\pi60t),
+\end{equation}
+y el producto entrega
+\begin{equation}
+r_i(t)=(\sqrt{2}V_i^{ref})s(t).
+\end{equation}
+Para $V_i^{ref}=120\,V$:
+\begin{equation}
+r_i(t)=169.7\sin(2\pi60t),
+\end{equation}
+correspondiente idealmente a $120\,V_{rms}$.
+
+\section{Código MATLAB del consenso}
+\begin{lstlisting}[language=Matlab]
+function [V1ref,V2ref,V3ref,delta1,delta2,delta3] = ...
+    consenso(V1local,V2local,V3local)
+
+Ts = 50e-6;
+Vnom = 120;
+
+kI = 5;
+kc = 10;
+
+delta_min = -10;
+delta_max = 10;
+
+persistent delta_1 delta_2 delta_3
+
+if isempty(delta_1)
+    delta_1 = 0;
+    delta_2 = 0;
+    delta_3 = 0;
+end
+
+% Error local: e_i = Vnom - V_i_local
+e_1 = Vnom - V1local;
+e_2 = Vnom - V2local;
+e_3 = Vnom - V3local;
+
+% Topologia:
+% VSI 1 <------> VSI 2 <------> VSI 3
+
+Ag = [0 1 0;
+      1 0 1;
+      0 1 0];
+
+Dg = [1 0 0;
+      0 2 0;
+      0 0 1];
+
+% Laplaciana: L = Dg - Ag
+L = Dg - Ag;
+
+delta = [delta_1;
+         delta_2;
+         delta_3];
+
+e = [e_1;
+     e_2;
+     e_3];
+
+% Ley: delta_dot = kI*e - kc*L*delta
+delta_dot = kI*e - kc*L*delta;
+
+% Euler
+delta = delta + Ts*delta_dot;
+
+% Saturacion
+delta(1) = min(max(delta(1),delta_min),delta_max);
+delta(2) = min(max(delta(2),delta_min),delta_max);
+delta(3) = min(max(delta(3),delta_min),delta_max);
+
+delta_1 = delta(1);
+delta_2 = delta(2);
+delta_3 = delta(3);
+
+% Referencias
+V1ref = Vnom + delta_1;
+V2ref = Vnom + delta_2;
+V3ref = Vnom + delta_3;
+
+delta1 = delta_1;
+delta2 = delta_2;
+delta3 = delta_3;
+
+end
+\end{lstlisting}
+
+\section{Estructura final}
+\begin{equation}
+\boxed{
+v_{C_i}\rightarrow RMS\rightarrow V_{i,local}\rightarrow Consenso
+\rightarrow V_i^{ref}\rightarrow Senoidal\ 60Hz\rightarrow MPC_i
+\rightarrow u_i\rightarrow PWM\rightarrow VSI_i\rightarrow LCL_i\rightarrow PCC
+}
+\end{equation}
+
+El objetivo final se verifica mediante
+\begin{equation}
+\boxed{V_{PCC,rms}\approx120\,V_{rms}}.
+\end{equation}
+El consenso no sustituye al MPC: modifica las referencias de amplitud y el MPC continúa realizando el control primario rápido. Para evidenciar el transitorio del consenso se recomienda aplicar una perturbación, como un cambio de carga, y observar simultáneamente $V_{PCC,rms}$, $V_{i,local}$, $\delta_i$ y $V_i^{ref}$.
+
+\section{Observación sobre la garantía}
+La generación de la referencia garantiza que $V_i^{ref}=120\,V_{rms}$ produzca una senoide de amplitud pico $169.7\,V$. No constituye, por sí sola, una garantía matemática de que el PCC alcance exactamente $120\,V_{rms}$ para cualquier perturbación. La validación debe realizarse observando la respuesta de $V_{PCC,rms}$ y demostrando convergencia para las condiciones de operación estudiadas.
+
+\begin{thebibliography}{9}
+\bibitem{tesis}
+Documento base del proyecto, \textit{MPC\_Microgrid.pdf}. Modelo de tres VSI en paralelo, filtro LCL, acoplamiento mediante PCC, discretización a $T_s=50\,\mu s$ y diseño del MPC.
+\end{thebibliography}
+
+\end{document}
