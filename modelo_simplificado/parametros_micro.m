@@ -513,6 +513,11 @@ plot(t,d3_hist,'LineWidth',1.5)
 
 grid on
 
+figure
+bode(plant_c)
+grid on
+
+
 xlabel('Time [s]')
 ylabel('d_i [V]')
 
