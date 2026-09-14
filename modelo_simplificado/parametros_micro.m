@@ -510,7 +510,12 @@ hold on
 plot(t,d2_hist,'LineWidth',1.5)
 
 plot(t,d3_hist,'LineWidth',1.5)
+xlabel('Time [s]')
+ylabel('d_i [V]')
 
+legend('d_1','d_2','d_3')
+
+title('Perturbaciones Locales')
 grid on
 
 figure
@@ -518,9 +523,4 @@ bode(plant_c)
 grid on
 
 
-xlabel('Time [s]')
-ylabel('d_i [V]')
 
-legend('d_1','d_2','d_3')
-
-title('Perturbaciones Locales')
